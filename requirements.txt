@@ -1,7 +1,5 @@
 streamlit
-streamlit-webrtc
 deepface
-opencv-python-headless
 tf-keras
 retina-face
-twilio
+opencv-python-headless
