@@ -16,7 +16,7 @@ if not os.path.exists(LOG_FILE):
         writer.writerow(['Timestamp', 'Gender', 'Confidence'])
 
 # --- 2. THE WEB INTERFACE ---
-st.title("Gender AI (Snapshot Mode)")
+st.title("Facial Gender Detection System")
 st.write("1. Allow camera access.\n2. Click 'Take Photo' to detect gender.")
 
 # --- 3. THE CAMERA INPUT (Standard HTML5 Camera) ---
@@ -95,3 +95,4 @@ if os.path.exists(LOG_FILE):
             file_name="gender_logs.csv",
             mime="text/csv"
         )
+
