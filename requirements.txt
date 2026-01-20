@@ -2,5 +2,6 @@ streamlit
 streamlit-webrtc
 deepface
 opencv-python-headless
-twilio
 tf-keras
+retina-face
+twilio
