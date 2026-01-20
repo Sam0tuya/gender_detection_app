@@ -1,11 +1,11 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-import av
 import cv2
+import numpy as np
 from deepface import DeepFace
 import datetime
 import csv
 import os
+from PIL import Image
 
 # --- 1. SETUP LOGGING ---
 LOG_FILE = 'gender_log.csv'
@@ -15,93 +15,83 @@ if not os.path.exists(LOG_FILE):
         writer = csv.writer(f)
         writer.writerow(['Timestamp', 'Gender', 'Confidence'])
 
-# --- 2. THE PROCESSOR ---
-class GenderProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.frame_count = 0
-        self.current_gender = "Initializing..."
-        self.confidence = 0.0
-        self.last_log_time = datetime.datetime.now()
+# --- 2. THE WEB INTERFACE ---
+st.title("Gender AI (Snapshot Mode)")
+st.write("1. Allow camera access.\n2. Click 'Take Photo' to detect gender.")
 
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        
-        # OPTIMIZATION:
-        # RetinaFace is slower, so we only scan once every 30 frames (approx 1 sec).
-        # This keeps your video feed smooth while the AI thinks in the background.
-        if self.frame_count % 30 == 0:
-            try:
-                # --- BIG CHANGE HERE ---
-                # Switched backend to 'retinaface' for maximum accuracy
-                objs = DeepFace.analyze(
-                    img_path = img, 
-                    actions = ['gender'],
-                    detector_backend = 'retinaface', # <--- The "Eagle Eye" upgrade
-                    enforce_detection = False,
-                    silent = True
-                )
-                
-                if len(objs) > 0:
-                    result = objs[0]
-                    
-                    # --- GENDER LOGIC ---
-                    # specific check to improve female detection
-                    gender_probs = result['gender']
-                    woman_score = gender_probs['Woman']
-                    man_score = gender_probs['Man']
+# --- 3. THE CAMERA INPUT (Standard HTML5 Camera) ---
+# This uses standard web upload, so it works on ALL mobile networks automatically.
+img_file_buffer = st.camera_input("Take a Selfie")
 
-                    # If the AI is even 40% sure it's a woman, we trust it 
-                    # (This fixes the bias where it defaults to Man too easily)
-                    if woman_score > 40: 
-                        self.current_gender = "Female"
-                        self.confidence = woman_score
-                    else:
-                        self.current_gender = "Male"
-                        self.confidence = man_score
+if img_file_buffer is not None:
+    # Convert the file buffer to an image that OpenCV can read
+    bytes_data = img_file_buffer.getvalue()
+    cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-                    # --- LOGGING ---
-                    if self.confidence > 50:
-                        now = datetime.datetime.now()
-                        if (now - self.last_log_time).total_seconds() > 2.0:
-                            with open(LOG_FILE, 'a', newline='') as f:
-                                writer = csv.writer(f)
-                                writer.writerow([now, self.current_gender, f"{self.confidence:.2f}%"])
-                            self.last_log_time = now
+    st.write("Analyzing... Please wait.")
+    
+    try:
+        # --- 4. HIGH ACCURACY DETECTION ---
+        # We can afford to use 'RetinaFace' because we are only processing ONE image,
+        # so speed doesn't matter as much as accuracy.
+        objs = DeepFace.analyze(
+            img_path = cv2_img, 
+            actions = ['gender'],
+            detector_backend = 'retinaface', # Maximum Accuracy
+            enforce_detection = False,
+            silent = True
+        )
 
-            except Exception as e:
-                print(f"Error: {e}")
+        if len(objs) > 0:
+            result = objs[0]
+            
+            # --- GENDER LOGIC ---
+            gender_probs = result['gender']
+            woman_score = gender_probs['Woman']
+            man_score = gender_probs['Man']
 
-        self.frame_count += 1
+            # Sensitivity Tweak
+            if woman_score > 40: 
+                gender = "Female"
+                confidence = woman_score
+            else:
+                gender = "Male"
+                confidence = man_score
 
-        # --- DRAWING ON SCREEN ---
-        cv2.rectangle(img, (20, 20), (450, 100), (0,0,0), -1)
-        
-        # Color logic: Green for Male, Magenta for Female
-        color = (0, 255, 0) if self.current_gender == "Male" else (255, 0, 255)
-        
-        cv2.putText(img, f"Gender: {self.current_gender}", (30, 65), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-        
-        cv2.putText(img, f"Conf: {self.confidence:.1f}%", (30, 90), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            # --- DISPLAY RESULT ---
+            # Create two columns for a nice layout
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Show the gender in big text
+                if gender == "Male":
+                    st.success(f"## Detected: {gender}")
+                else:
+                    st.error(f"## Detected: {gender}") # Red/Pink color for female
+            
+            with col2:
+                st.metric(label="Confidence", value=f"{confidence:.1f}%")
 
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
+            # --- LOG TO FILE ---
+            if confidence > 50:
+                with open(LOG_FILE, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([datetime.datetime.now(), gender, f"{confidence:.2f}%"])
+                st.toast("Data saved to CSV!", icon="✅")
 
-# --- 3. THE WEB APP UI ---
-st.title("Gender Recognition AI (High Accuracy)")
-st.write("Using RetinaFace for improved female detection.")
+        else:
+            st.warning("No face detected. Please hold the camera closer.")
 
+    except Exception as e:
+        st.error(f"Error during analysis: {e}")
+
+# --- 5. DOWNLOAD LOGS ---
+st.markdown("---")
 if os.path.exists(LOG_FILE):
     with open(LOG_FILE, "rb") as file:
         st.download_button(
-            label="Download Excel/CSV Logs",
+            label="Download Logs",
             data=file,
             file_name="gender_logs.csv",
             mime="text/csv"
         )
-
-webrtc_streamer(
-    key="gender-detect",
-    video_processor_factory=GenderProcessor,
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
