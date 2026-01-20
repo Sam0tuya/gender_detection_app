@@ -101,7 +101,7 @@ class GenderProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 # --- 3. THE WEB INTERFACE ---
-st.title("Gender Recognition AI (Mobile Ready)")
+st.title("Facial Gender Detection System")
 st.write("Real-time gender detection system. Data is automatically saved to CSV.")
 
 # Download Button Logic
@@ -137,3 +137,4 @@ webrtc_streamer(
     video_processor_factory=GenderProcessor,
     rtc_configuration={"iceServers": ice_servers}
 )
+
